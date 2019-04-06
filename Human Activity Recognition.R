@@ -1,0 +1,252 @@
+
+library(dplyr)
+library(stringr)
+library(ggplot2)
+
+
+#Loading the measurement data set
+x_train<-read.table("train/X_train.txt")
+#Loading the dataset for activity labels
+y_train<-data.frame(ActivityLabel=read.table("train/Y_train.txt"))
+subject_id<- data.frame(Subject=read.table("train/subject_train.txt"))
+subject_id<- setNames(subject_id,"subject")
+
+#Loading the feature name for each column
+label<-read.table("features.txt")
+
+#correct the label dataset, so it can be used to name the measurement data set "x_train"
+true_label<-make.names(label[,2],unique=TRUE)
+write.csv(true_label, file="true_label.csv")
+
+#Add name to the measurement data set
+x_train<-setNames(x_train,true_label)
+
+#Converting the activity label to activity name
+y_train<-setNames(y_train,"ActivityLabel")
+y_train<-y_train %>% mutate(ActivityName=case_when(ActivityLabel==1~"WALKING",
+                                          ActivityLabel==2~"WALKING_UPSTAIRS",
+                                          ActivityLabel==3~"WALKING_DOWNSTAIRS",
+                                          ActivityLabel==4~"SITTING",
+                                          ActivityLabel==5~"STANDING",
+                                          ActivityLabel==6~"LAYING"))
+
+y_train$ActivityName<- as.factor(y_train$ActivityName)
+                   
+
+#Combining both measurement data set to its activity label dataset
+human.activity<-cbind(x_train,y_train,subject_id)
+human.activity$index<-as.numeric(row.names(human.activity))
+
+human.activity2 <- human.activity %>% group_by(ActivityName) %>% mutate(id_activity=row_number()) 
+human.activity2 <- human.activity2 %>% group_by(subject) %>% mutate(id_subject=row_number())
+human.activity2 <- human.activity2 %>% group_by(subject,ActivityName) %>% mutate(id_subject_activity=row_number())
+write.csv(human.activity2,file="tryout1.csv")
+
+
+#to see the distribution of all activities
+ggplot(human.activity2, aes(x=ActivityName,fill=ActivityName))+
+  geom_bar()+
+  theme_bw()+
+  theme(legend.position = "none")+
+  labs(title="Distribution of Activities")
+      
+
+#to see in what order the experiment was performed in term of subject
+ggplot(human.activity2, aes(x=index, y=subject))+
+  geom_line(color="blue")+
+  xlab("Index")+
+  ylab("Subject")+
+  theme_bw() +
+  labs(title="Turn of Subject during Experiment")
+
+#to see in what order the experiment was performed in term of activity
+ggplot(human.activity2, aes(x=id_subject, y=ActivityLabel))+
+  geom_line()+
+  facet_wrap(subject~.,ncol=7)+
+  xlab("Index")+
+  ylab("Activity Label")+
+  theme_bw() +
+  labs(title="Turn of Activity during Experiment")
+
+#Drawing the Mean of Body Accelration accross all Subjects
+ggplot(human.activity2, aes(x=id_activity))+
+  geom_line(aes(y=tBodyAcc.mean...X),color="red")+
+  geom_line(aes(y=tBodyAcc.mean...Y),color="blue")+
+  geom_line(aes(y=tGravityAcc.mean...Z),color="green")+
+  facet_wrap(ActivityName~.)+
+  xlab("Index")+
+  ylab("Mean Acceleration")+
+  theme_bw() +
+  labs(title="Mean of Body Acceleration Plot of All Subjects")
+  
+
+#Drawing the SD of Body Acceleration accross all Subjects
+ggplot(human.activity2, aes(x=id_activity))+
+  geom_line(aes(y=tBodyAcc.std...X),color="red")+
+  geom_line(aes(y=tBodyAcc.std...Y),color="blue")+
+  geom_line(aes(y=tBodyAcc.std...Z),color="green")+
+  facet_wrap(ActivityName~.)+
+  xlab("Index")+
+  ylab("Acceleration")+
+  theme_bw() +
+  labs(title="SD of Body Acceleration Plot of All Subjects")
+
+#As we can see seeing reading across all subjects is not something that is easy to see
+#Next will be to explore the sensors reading for only 1 subject = subject no 3
+#Body Acceleration Mean of subject no 3 with geom smooth
+human.activity2 %>% filter(subject==3) %>%
+ggplot(aes(x=id_subject_activity))+
+  geom_line(aes(y=tBodyAcc.mean...X),color="red", alpha=0.8, linetype=3)+
+  geom_line(aes(y=tBodyAcc.mean...Y),color="blue",alpha=0.8, linetype=3)+
+  geom_line(aes(y=tBodyAcc.mean...Z),color="green",alpha=0.8, linetype=3)+
+  geom_smooth(method="lm",aes(y=tBodyAcc.mean...X),color="red", alpha=0.8, linetype=1, se=FALSE)+
+  geom_smooth(method="lm",aes(y=tBodyAcc.mean...Y),color="blue",alpha=0.8, linetype=1, se=FALSE)+
+  geom_smooth(method="lm",aes(y=tBodyAcc.mean...Z),color="green",alpha=0.8, linetype=1, se=FALSE)+
+  facet_wrap(ActivityName~.)+
+  theme_bw() +
+  xlab("Index")+
+  ylab("Acceleration")+
+  labs(title="Mean of Body Acceleration Plot of Subject 3")
+
+#Body Accelration Reading SD of subject no 3 with geom smooth
+human.activity2 %>% filter(subject==3) %>%
+  ggplot(aes(x=id_subject_activity))+
+  geom_line(aes(y=tBodyAcc.std...X),color="red", alpha=0.8, linetype=3)+
+  geom_line(aes(y=tBodyAcc.std...Y),color="blue",alpha=0.8, linetype=3)+
+  geom_line(aes(y=tBodyAcc.std...Z),color="green",alpha=0.8, linetype=3)+
+  geom_smooth(method="lm",aes(y=tBodyAcc.std...X),color="red", alpha=0.8, linetype=1, se=FALSE)+
+  geom_smooth(method="lm",aes(y=tBodyAcc.std...Y),color="blue",alpha=0.8, linetype=1, se=FALSE)+
+  geom_smooth(method="lm",aes(y=tBodyAcc.std...Z),color="green",alpha=0.8, linetype=1, se=FALSE)+
+  facet_wrap(ActivityName~.)+
+  theme_bw() +
+  xlab("Index")+
+  ylab("Accscope Reading")+
+  labs(title="std of Body Accelration Reading Plot of Subject 3")
+
+#Body Gyroscope Reading Mean of subject no 3 with geom smooth
+human.activity2 %>% filter(subject==3) %>%
+  ggplot(aes(x=id_subject_activity))+
+  geom_line(aes(y=tBodyGyro.mean...X),color="red", alpha=0.8, linetype=3)+
+  geom_line(aes(y=tBodyGyro.mean...Y),color="blue",alpha=0.8, linetype=3)+
+  geom_line(aes(y=tBodyGyro.mean...Z),color="green",alpha=0.8, linetype=3)+
+  geom_smooth(method="lm",aes(y=tBodyGyro.mean...X),color="red", alpha=0.8, linetype=1, se=FALSE)+
+  geom_smooth(method="lm",aes(y=tBodyGyro.mean...Y),color="blue",alpha=0.8, linetype=1, se=FALSE)+
+  geom_smooth(method="lm",aes(y=tBodyGyro.mean...Z),color="green",alpha=0.8, linetype=1, se=FALSE)+
+  facet_wrap(ActivityName~.)+
+  theme_bw() +
+  xlab("Index")+
+  ylab("Gyroscope Reading")+
+  labs(title="Mean of Body Gyroscope Reading Plot of Subject 3")
+
+#Body Gyroscope Reading SD of subject no 3 with geom smooth
+human.activity2 %>% filter(subject==3) %>%
+  ggplot(aes(x=id_subject_activity))+
+  geom_line(aes(y=tBodyGyro.std...X),color="red", alpha=0.8, linetype=3)+
+  geom_line(aes(y=tBodyGyro.std...Y),color="blue",alpha=0.8, linetype=3)+
+  geom_line(aes(y=tBodyGyro.std...Z),color="green",alpha=0.8, linetype=3)+
+  geom_smooth(method="lm",aes(y=tBodyGyro.std...X),color="red", alpha=0.8, linetype=1, se=FALSE)+
+  geom_smooth(method="lm",aes(y=tBodyGyro.std...Y),color="blue",alpha=0.8, linetype=1, se=FALSE)+
+  geom_smooth(method="lm",aes(y=tBodyGyro.std...Z),color="green",alpha=0.8, linetype=1, se=FALSE)+
+  facet_wrap(ActivityName~.)+
+  theme_bw() +
+  xlab("Index")+
+  ylab("Gyroscope Reading")+
+  labs(title="std of Body Gyroscope Reading Plot of Subject 3")
+
+human.activity2 %>% filter(subject==3) %>%
+  ggplot(aes(x=id_subject_activity))+
+  geom_line(aes(y=tGravityAcc.mean...X),color="red", alpha=0.8, linetype=3)+
+  geom_line(aes(y=tGravityAcc.mean...Y),color="blue",alpha=0.8, linetype=3)+
+  geom_line(aes(y=tGravityAcc.mean...Z),color="green",alpha=0.8, linetype=3)+
+  geom_smooth(method="lm",aes(y=tGravityAcc.mean...X),color="red", alpha=0.8, linetype=1, se=FALSE)+
+  geom_smooth(method="lm",aes(y=tGravityAcc.mean...Y),color="blue",alpha=0.8, linetype=1, se=FALSE)+
+  geom_smooth(method="lm",aes(y=tGravityAcc.mean...Z),color="green",alpha=0.8, linetype=1, se=FALSE)+
+  facet_wrap(ActivityName~.)+
+  theme_bw() +
+  xlab("Index")+
+  ylab("Gravity Reading")+
+  labs(title="Mean of Body Gravity Reading Plot of Subject 3")
+
+#Body Acceleration mean Histogram of subject no 3 with geom smooth
+human.activity2 %>% 
+  filter(subject==3) %>%
+  ggplot()+
+  geom_histogram(binwidth=0.01,aes(x=tBodyAcc.mean...X),fill="red", alpha=0.6)+
+  geom_histogram(binwidth=0.01,aes(x=tBodyAcc.mean...Y),fill="blue",alpha=0.6)+
+  geom_histogram(binwidth=0.01,aes(x=tBodyAcc.mean...Z),fill="green",alpha=0.6)+
+  facet_wrap(ActivityName~.)+
+  theme_bw() +
+  xlab("Index")+
+  ylab("Acceleration Reading")+
+  labs(title="mean of Body Acceleration Reading Plot of Subject 3")
+
+
+#Body Acceleration std Histogram of subject no 3 with geom smooth
+human.activity2 %>% 
+  filter(subject==3) %>%
+  ggplot()+
+  geom_histogram(binwidth=0.01,aes(x=tBodyAcc.std...X),fill="red", alpha=0.6)+
+  geom_histogram(binwidth=0.01,aes(x=tBodyAcc.std...Y),fill="blue",alpha=0.6)+
+  geom_histogram(binwidth=0.01,aes(x=tBodyAcc.std...Z),fill="green",alpha=0.6)+
+  facet_wrap(ActivityName~.)+
+  theme_bw() +
+  xlab("Index")+
+  ylab("Acceleration Reading")+
+  labs(title="std of Body Acceleration Reading Plot of Subject 3")
+
+#Body Gyroscope mean Histogram of subject no 3 with geom smooth
+human.activity2 %>% 
+  filter(subject==3) %>%
+  ggplot()+
+  geom_histogram(binwidth=0.01,aes(x=tBodyGyro.mean...X),fill="red", alpha=0.6)+
+  geom_histogram(binwidth=0.01,aes(x=tBodyGyro.mean...Y),fill="blue",alpha=0.6)+
+  geom_histogram(binwidth=0.01,aes(x=tBodyGyro.mean...Z),fill="green",alpha=0.6)+
+  facet_wrap(ActivityName~.)+
+  theme_bw() +
+  xlab("Index")+
+  ylab("Gyroscope Reading")+
+  labs(title="mean of Body Gyroscope Reading Plot of Subject 3")
+
+
+#Body Gyroscope std Histogram of subject no 3 with geom smooth
+human.activity2 %>% 
+  filter(subject==3) %>%
+  ggplot()+
+  geom_histogram(binwidth=0.01,aes(x=tBodyGyro.std...X),fill="red", alpha=0.6)+
+  geom_histogram(binwidth=0.01,aes(x=tBodyGyro.std...Y),fill="blue",alpha=0.6)+
+  geom_histogram(binwidth=0.01,aes(x=tBodyGyro.std...Z),fill="green",alpha=0.6)+
+  facet_wrap(ActivityName~.)+
+  theme_bw() +
+  xlab("Index")+
+  ylab("Gyroscope Reading")+
+  labs(title="std of Body Gyroscope Reading Plot of Subject 3")
+
+
+#Body Gravity mean Histogram of subject no 3 with geom smooth
+human.activity2 %>% 
+  filter(subject==3) %>%
+  ggplot()+
+  geom_histogram(binwidth=0.01,aes(x=tGravityAcc.mean...X),fill="red", alpha=0.6)+
+  geom_histogram(binwidth=0.01,aes(x=tGravityAcc.mean...Y),fill="blue",alpha=0.6)+
+  geom_histogram(binwidth=0.01,aes(x=tGravityAcc.mean...Z),fill="green",alpha=0.6)+
+  facet_wrap(ActivityName~.)+
+  theme_bw() +
+  xlab("Index")+
+  ylab("Gravity Reading")+
+  labs(title="mean of Body Gravity Reading Plot of Subject 3")
+
+
+#Body Gravity std Histogram of subject no 3 with geom smooth
+human.activity2 %>% 
+  filter(subject==3) %>%
+  ggplot()+
+  geom_histogram(binwidth=0.01,aes(x=tGravityAcc.std...X),fill="red", alpha=0.6)+
+  geom_histogram(binwidth=0.01,aes(x=tGravityAcc.std...Y),fill="blue",alpha=0.6)+
+  geom_histogram(binwidth=0.01,aes(x=tGravityAcc.std...Z),fill="green",alpha=0.6)+
+  facet_wrap(ActivityName~.)+
+  theme_bw() +
+  xlab("Index")+
+  ylab("Gravity Reading")+
+  labs(title="std of Body Gravity Reading Plot of Subject 3")
+
+
