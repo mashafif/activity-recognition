@@ -2,7 +2,11 @@
 title: "Human Activity Recognition using Smartphone"
 author: "Mashlahul Afif"
 date: "April 6, 2019"
-output: html_document
+output: 
+  html_document:
+   toc: true
+   toc_float: true
+   code_folding: show
 ---
 
 
@@ -16,27 +20,38 @@ This project is the capstone project for Introduction to Data Science from Sprin
 
 
 The necessary datasets consists of the following:
-*X_train.txt - contains sensors reading data that consists of 561 variables, and 7352 observations
-*Y_train.txt - contains the information regarding the activity corresponds to each observation above
-*subject_train.txt - contains the Subject which performs the above experiments.
-*feature.txt - information about all features correspond to observations of above x_train.txt dataset.
+
+* X_train.txt - contains sensors reading data that consists of 561 variables, and 7352 observations
+
+* Y_train.txt - contains the information regarding the activity corresponds to each observation above
+
+* subject_train.txt - contains the Subject which performs the above experiments.
+
+* feature.txt - information about all features correspond to observations of above x_train.txt dataset.
+
 
 ###*Loading the dataset*
 
 First step is to load the dataset which is obtained from UCI Machine Learning Repository.
 
-```{r}
+```{r, echo=FALSE}
 
 library(dplyr)
 library(stringr)
 library(ggplot2)
+```
+
+```{r}
 
 #Loading the measurement data set
 x_train<-read.table("train/X_train.txt")
+x_test<-read.table("test/X_test.txt")
 #Loading the dataset for activity labels
-y_train<-data.frame(ActivityLabel=read.table("train/Y_train.txt"))
+y_train<-data.frame(ActivityLabel=read.table("train/Y_train.txt"), train.or.test= "train")
+y_test<-data.frame(ActivityLabel=read.table("test/Y_test.txt"),train.or.test= "test")
 subject_id<- data.frame(Subject=read.table("train/subject_train.txt"))
-subject_id<- setNames(subject_id,"Subject")
+subject_id_test<- data.frame(Subject=read.table("test/subject_test.txt"))
+
 ```
 
 ###*Adding Features to the Sensor Reading Dataset*
@@ -68,6 +83,10 @@ true_label<-label%>%
 
 #Add name to the measurement data set
 x_train<-setNames(x_train,true_label)
+x_test<-setNames(x_test,true_label)
+#combine x_train and x_test
+human.activity<- rbind(x_train,x_test)
+rm(x_train,x_test,true_label,label)
 ```
 
 ###*Adding Actitivity Label from y dataset*
@@ -76,15 +95,21 @@ To make it more understandable, activity label, which consists of numbering of e
 
 ```{r}
 #Converting the activity label to activity name
-y_train<-setNames(y_train,"ActivityLabel")
-y_train<-y_train %>% mutate(ActivityName=case_when(ActivityLabel==1~"WALKING",
+y_all<-rbind(y_train,y_test)
+rm(y_test,y_train)
+y_all<-setNames(y_all,c("ActivityLabel","Train.or.Test"))
+                  
+y_all<-y_all %>% mutate(ActivityName=case_when(ActivityLabel==1~"WALKING",
                                           ActivityLabel==2~"WALKING_UPSTAIRS",
                                           ActivityLabel==3~"WALKING_DOWNSTAIRS",
                                           ActivityLabel==4~"SITTING",
                                           ActivityLabel==5~"STANDING",
                                           ActivityLabel==6~"LAYING"))
 
-y_train$ActivityName<- as.factor(y_train$ActivityName)
+
+
+y_all$ActivityName<- as.factor(y_all$ActivityName)
+
 ```                   
 
 ###*Combining All Dataset Together*
@@ -100,8 +125,13 @@ The indices' features consist of the following:
 *Subject.Activity.ID - time stamp that is unique for each activity within each subject.
 
 ```{r}
+
+#combining subject markes of both train and test data
+subject_id<- rbind(subject_id,subject_id_test)
+subject_id<- setNames(subject_id,"Subject")
+
 #Combining both measurement data set to its activity label dataset
-human.activity<-cbind(subject_id,y_train,x_train)
+human.activity<-cbind(subject_id,y_all,human.activity)
 human.activity<-human.activity%>%
                 mutate(Overall.ID=as.numeric(row_number()))
 
@@ -114,10 +144,57 @@ human.activity <- human.activity %>%
 human.activity <- human.activity %>%
                   group_by(Subject,ActivityName)%>% 
                   mutate(Subject.Activity.ID=row_number())%>%
-                  select(Overall.ID,Subject.ID,Activity.ID,Subject.Activity.ID,everything())
+                  select(Overall.ID,Subject.ID,Activity.ID,Subject.Activity.ID,Train.or.Test,everything())
 ```
 
-##Data Exploratory and Data Visualization
+##Understanding The Data
+
+From the Readme file of this dataset, the author has mentioned that in the engineered data set that we will use as predictors (x_test/train.txt) : "Features are normalized and bounded within [-1,1].". This means that "Time.Mean.Acc.Mean.X" is not simply the mean of each row of the raw sensor reading dataset from "body_acc_x_train.txt". Instead, it is obtained by first averaging value of each row in "body_acc_x_train.txt", then normalizing the mean value of each row using Min Max normalization: 
+
+$normalized\,x= \frac{x-max_{all\,x}}{max_{all\,x}-min_{x}}(new\,max_{all\,x}-new\,min_{all\,x})+new\,min_{all\,x}$
+
+
+To proof this, we will calculate the mean and standard deviation of each row of body_acc_x_train.txt, normalize the result using above equation, and then try to compare it with the data "Time.Mean.Acc.Mean.X" and "Time.Mean.Acc.std.X" from "x_train.txt"  
+
+```{r}
+#load the raw inertia dataset
+raw.acc.x.train <-  read.table("train/Inertial Signals/body_acc_x_train.txt")
+
+#creating the min max normalize function
+normalize <- function(x,newmin,newmax) {
+    return (((x - min(x)) / (max(x) - min(x))*(newmax-newmin))+newmin)
+  }
+
+#to find the normalized mean and std of each row of the raw datset
+raw.acc.x.train.sum<- raw.acc.x.train%>%
+                      mutate(mean.raw=apply(.,1,mean),std.raw=apply(.,1,sd))%>%
+                      select(mean.raw,std.raw)
+
+raw.acc.x.train.sum=data.frame(apply(raw.acc.x.train.sum,2,normalize,newmin=-1,newmax=1))
+
+#Comparing the dataset that has been engineered by the author (x_train) with normalized mean and standard deviation, which have been manually calculated above.
+
+human.activity%>%ungroup()%>%
+                 filter(Train.or.Test=="train")%>%
+                 select(Time.Body.Acc.mean.X, Time.Body.Acc.std.X)%>%
+                 cbind(raw.acc.x.train.sum)%>%
+                 select(Time.Body.Acc.mean.X,mean.raw,Time.Body.Acc.std.X,std.raw)%>%
+                 summary()
+```
+
+From the summary() result above, we can clearly see that that the normalized mean and standard deviation values that we calculated manually are identical with the "Time.Body.Acc.mean.x"  and "Time.Body.Acc.std.x" respectively.
+
+With this we can now understand that the values included in x_test is not the actual value. Instead it can be intrepreted as follow:
+
+* -1 means that the value is equal to the minimum value of all obseravtions in the same feature.
+
+* +1 means that the value is equal to the maximum value of all observations in the same feature.
+
+* 0 means that the value is approximately equal to the median value.
+
+This is very useful during data exploratory, because we will be able to understand how exactly each observation/group compared to others.
+
+##Data Exploratory and Visualization
 
 ###*Distribution of Activities*
 
@@ -139,7 +216,7 @@ ggplot(human.activity, aes(x=Subject,fill=ActivityName))+
 ```
 
 As shown above the distribution of activities is not equal. 
-Therefore, the following dataset will be created, which are useful to equalize the number of observations for the data visualizations later.
+Therefore, the following dataset will be created, which are useful to equalize the number of observations of each activity. This will be useful for the data visualizations later.
 
 ```{r}
 minmax.activity<-human.activity%>%
@@ -157,33 +234,52 @@ In what order the experiment was performed in term of subjects are shown below:
 
 ```{r}
 #to see in what order the experiment was performed in term of subject
-ggplot(human.activity, aes(x=Overall.ID, y=Subject))+
-  geom_line(size=2,color="blue")+
+human.activity%>% filter(Train.or.Test=="train")%>%
+  ggplot(aes(x=Overall.ID, y=Subject))+
+  geom_line(size=1.5,color="blue")+
   xlab("Index")+
   ylab("Subject")+
   theme_bw() +
   labs(title="Order of Subject During Experiment")
 ```
 
-As shown above, no repetition in term of subjects' order. Each subject only done the experiment once, before continuing to the next subject.
-
+As shown above, no repetition in term of subjects' order. The dataset has been ordered by subject from the beginning.
 
 Next, is to show the order of activiy done by each subject.
 ```{r}
 #to see in what order the experiment was performed in term of activity
 ggplot(human.activity, aes(x=Subject.ID, y=ActivityLabel, col=ActivityLabel))+
-  geom_line(size=2)+
-  scale_color_distiller(palette = "RdPu")+
-  facet_wrap(Subject~.,ncol=7)+
+  geom_line(size=1)+
+  scale_color_gradientn(colours = rainbow(5),breaks=c(1,2,3,4,5,6),labels=c("1. Walking","2. Walking Upstairs","3 Walking Downstairs","4.Sitting","5.Standing","6.Laying"))+
+  facet_wrap(Subject~.,ncol=6)+
   xlab("Index")+
   ylab("Activity Label")+
   theme_bw() +
+  theme(axis.text.x = element_blank(),axis.ticks.x=element_blank())
   labs(title="Order of Activity done by each Subject during Experiment")
 ```
 
-As shown above, all subjects done the same order of activities.
+As shown above, all subjects done the same order of activities. To see it clearly we will see the activities done by only 4 subjects (subject no =1,2,3,4)
 
-###*Time Series Visualization*
+```{r}
+human.activity%>%filter(Subject<=4)%>%
+  ggplot(aes(x=Subject.ID, y=ActivityLabel, col=ActivityLabel))+
+  geom_line(size=1)+
+  scale_color_gradientn(colours = rainbow(5),breaks=c(1,2,3,4,5,6),labels=c("1. Walking","2.Walking Upstairs","3   Walking Downstairs","4.Sitting","5.Standing","6.Laying"))+
+  facet_wrap(Subject~.,ncol=2)+
+  xlab("Index")+
+  ylab("Activity Label")+
+  theme_bw() +
+  theme(axis.text.x = element_blank(),axis.ticks.x=element_blank())+
+  scale_y_continuous(breaks=seq(0,6,1))+
+  labs(title="Order of Activity done by each Subject during Experiment")
+```
+
+From above visualization, we can see that each subject performed the experiment in the following order :
+
+Standing -> Sitting -> Laying -> Walking -> Walking Downstairs -> Walking Upstairs
+
+###*Time Series Visualization of All Data*
 
 Next step is to show the time series visualization of Accelerator reading across all subjects:
 
@@ -201,38 +297,28 @@ ggplot(aes(x=Activity.ID))+
   theme(strip.text = element_text(size = 4.5))+
   labs(title="Mean of Body Acceleration Plot of All Subjects")
   
-
-#Drawing the SD of Body Acceleration accross all Subjects
-human.activity%>%filter(Activity.ID<=min(minmax.activity$max.activity))%>%
-  ggplot(aes(x=Activity.ID))+
-  geom_line(aes(y=Time.Body.Acc.std.X),color="red")+
-  geom_line(aes(y=Time.Body.Acc.std.Y),color="blue")+
-  geom_line(aes(y=Time.Body.Acc.std.Z),color="green")+
-  facet_grid(ActivityName~.)+
-  xlab("Index")+
-  ylab("STD Acceleration")+
-  theme_bw() +
-  theme(strip.text = element_text(size = 4.5))+
-  labs(title="Standard Deviation of Body Acceleration Plot of All Subjects")
 ```
 
 From the time series data above, we can cleary observe clear pattern difference between stationary activities (standing, sitting, laying), and the moving activities(walking, etc).
-As we can see seeing reading across all subjects is not something that is easy to see
-Next will be to explore the sensors reading for only 1 subject = subject no 3
+
+Yet, Visualization of time series across all subjects is not something that is easy to observe.
+Next will be to explore the sensors reading for only 1 subject = subject no 5
 
 ###*Time Series Visualization for One Subject*
 
 Next step is to show the time series visualization of Accelerator reading only for Subject 5:
 
+First is to determine the minimum time index across all activities done by subject 5. 
 ```{r}
 
 Subjects <- minmax.subject.activity%>%
                    filter(Subject==5)
 Subjects.length<- min(Subjects$max.activity)
-Subjects.length
+```
 
+#### Time Series Plot of Body Acceleration
 
-
+```{r}
 #Body Accelration Reading Mean of subject no 5
 human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
   ggplot(aes(x=Subject.Activity.ID))+
@@ -240,13 +326,16 @@ human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
   geom_line(aes(y=Time.Body.Acc.mean.Y),color="blue")+
   geom_line(aes(y=Time.Body.Acc.mean.Z),color="green")+
   facet_grid(ActivityName~.)+
-  xlab("Index")+
-  ylab("Mean Acceleration")+
+  xlab("Time Index")+
+  ylab("Normalized Mean of Acceleration")+
   theme_bw() +
   theme(strip.text = element_text(size = 4.5))+
   labs(title="Mean of Body Acceleration Plot of Subject 5")
+```
 
+From the result of Mean of Accelleration reading we can observe that stationary activities (laying, sitting, and standing) shows less fluctuation if compared to moving activities (walking, walking downstairs, walking upstairs) 
 
+```{r}
 #Body Accelration Reading SD of subject no 5
 human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
   ggplot(aes(x=Subject.Activity.ID))+
@@ -254,28 +343,42 @@ human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
   geom_line(aes(y=Time.Body.Acc.std.Y),color="blue")+
   geom_line(aes(y=Time.Body.Acc.std.Z),color="green")+
   facet_grid(ActivityName~.)+
-  xlab("Index")+
-  ylab("std Acceleration")+
+  xlab("Time Index")+
+  ylab("Normalized Standard Deviation of Acceleration")+
   theme_bw() +
   theme(strip.text = element_text(size = 4.5))+
-  labs(title="Std of Body Acceleration Plot of Subject 5")
+  labs(title="Standard Deviation of Body Acceleration Plot of Subject 5")
+```
 
+From the result of Standard Deviation of Accelleration Time series above, it shows that standard deviation of stationary activities are relatively at the minimum value if compared to the other observations. Because actual standard deviation cannot be less than 0, so we can safely assume that the standard deviation of these stationary activities is approximately equal to 0.
+
+Moving activities, as expected, shows relatively high standard deviation if compared to the stationary activities. 
+From this result also we can see there is differece in value between walking downstairs and upstairs.
+Walking downstairs plots show that it has relatively lower Y axis reading if compared to walking upstairs.
+
+
+```{r}
 #Body Acceleration Magnitude of subject
 human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
   ggplot(aes(x=Subject.Activity.ID))+
   geom_line(aes(y=Time.Body.Acc.Mag.mean),color="purple")+
   facet_grid(ActivityName~.)+
   xlab("Index")+
-  ylab("std Acceleration")+
+  ylab("Normalized Magnitude of Acceleration")+
   theme_bw() +
   theme(strip.text = element_text(size = 4.5))+
-  labs(title="Std of Body Acceleration Plot of Subject 5")
+  labs(title="Magnitude (Resultant of X,Y,Z) of Body Acceleration Plot of Subject 5")
 ```
+
+We can also draw same conclusion from the Magnitude (Resultant of X,Y,Z) of Body Acceleration above. The new discovery is regarding the normal walking that shows relatively lower value if compared to walking upstairs/downstairs. Also, the walking upstairs shows relatively slightly higher magnitude value if compared with walking downstairs.
+
+
+
+#### Time Series Plot of Body Gyroscope reading
 
 Next step is to show the time series visualization of Gyroscope reading only for Subject 5:
 
 ```{r}
-#----------------------------------------Gyro Time Series Line---------------------------------------------
 
 #Body Gyroscope Reading Mean of subject no 5
 human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
@@ -284,13 +387,18 @@ human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
   geom_line(aes(y=Time.Body.Gyro.mean.Y),color="blue")+
   geom_line(aes(y=Time.Body.Gyro.mean.Z),color="green")+
   facet_grid(ActivityName~.)+
-  xlab("Index")+
-  ylab("Mean Gyroscope")+
+  xlab("Time Index")+
+  ylab("Normalized Mean of Gyroscope")+
   theme_bw() +
   theme(strip.text = element_text(size = 4.5))+
   labs(title="Mean of Body Gyroscope Plot of Subject 5")
+```
+
+Gyroscope which represents the radial velocity of subject shows that laying has relatively Z axis reading if compared to the other stationary activities. 
+Meanwhile, normal walking shows that it shows barely no variation in gyroscope reading if compared to the walking upstairs/downstairs.
 
 
+```{r}
 #Body Gyroscope Reading SD of subject no 5
 human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
   ggplot(aes(x=Subject.Activity.ID))+
@@ -298,29 +406,35 @@ human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
   geom_line(aes(y=Time.Body.Gyro.std.Y),color="blue")+
   geom_line(aes(y=Time.Body.Gyro.std.Z),color="green")+
   facet_grid(ActivityName~.)+
-  xlab("Index")+
-  ylab("std Gyroscope")+
+  xlab("Time Index")+
+  ylab("Normalized Standard Deviation of Gyroscope")+
   theme_bw() +
   theme(strip.text = element_text(size = 4.5))+
-  labs(title="Std of Body Gyroscope Plot of Subject 5")
+  labs(title="Standard Deviation of Body Gyroscope Plot of Subject 5")
+```
 
+We can draw the same conclusion from the Standard Deviation of Gyroscope with the Body Acceleration's counterpart.
+
+```{r}
 #Body Gyroscope Magnitude of subject
 human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
   ggplot(aes(x=Subject.Activity.ID))+
   geom_line(aes(y=Time.Body.Gyro.Mag.mean),color="purple")+
   facet_grid(ActivityName~.)+
-  xlab("Index")+
-  ylab("std Gyroscope")+
+  xlab("Time Index")+
+  ylab("Normalized Magnitude of Gyroscope")+
   theme_bw() +
   theme(strip.text = element_text(size = 4.5))+
-  labs(title="Std of Body Gyroscope Plot of Subject 5")
+  labs(title="Magnitude (Resultant of X,Y,Z) of Body Gyroscope Plot of Subject 5")
 ```
+
+Likewise, We can draw the same conclusion from the Maginitude of Gyroscope with the Body Acceleration's counterpart.
+
+#### Time Series Plot of Gravity Result
 
 Next step is to show the time series visualization of Gravity reading only for Subject 5:
 
 ```{r}
-#----------------------------------------Gravity Time Series Line---------------------------------------------
-
 #Body Gravity Reading Mean of subject no 5
 human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
   ggplot(aes(x=Subject.Activity.ID))+
@@ -328,13 +442,16 @@ human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
   geom_line(aes(y=Time.Gravity.Acc.mean.Y),color="blue")+
   geom_line(aes(y=Time.Gravity.Acc.mean.Z),color="green")+
   facet_grid(ActivityName~.)+
-  xlab("Index")+
-  ylab("Mean Gravity")+
+  xlab("Time Index")+
+  ylab("Normalized Mean of Gravity")+
   theme_bw() +
   theme(strip.text = element_text(size = 4.5))+
   labs(title="Mean of Body Gravity Plot of Subject 5")
+```
 
 
+
+```{r}
 #Body Gravity Reading SD of subject no 5
 human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
   ggplot(aes(x=Subject.Activity.ID))+
@@ -342,22 +459,24 @@ human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
   geom_line(aes(y=Time.Gravity.Acc.std.Y),color="blue")+
   geom_line(aes(y=Time.Gravity.Acc.std.Z),color="green")+
   facet_grid(ActivityName~.)+
-  xlab("Index")+
-  ylab("std Gravity")+
+  xlab("Time Index")+
+  ylab("Normalized Standard Deviation of Gravity")+
   theme_bw() +
   theme(strip.text = element_text(size = 4.5))+
-  labs(title="Std of Body Gravity Plot of Subject 5")
+  labs(title="Standard Deviation of Body Gravity Plot of Subject 5")
+```
 
+```{r}
 #Body Gravity Magnitude of subject
 human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
   ggplot(aes(x=Subject.Activity.ID))+
   geom_line(aes(y=Time.Gravity.Acc.Mag.mean),color="purple")+
   facet_grid(ActivityName~.)+
-  xlab("Index")+
-  ylab("std Gravity")+
+  xlab("Time Index")+
+  ylab("Normalized Gravity Magnitude Value")+
   theme_bw() +
   theme(strip.text = element_text(size = 4.5))+
-  labs(title="Std of Body Gravity Plot of Subject 5")
+  labs(title="Magnitude (Resultant of X,Y,Z) of Body Gravity Plot of Subject 5")
 ```
 
 
@@ -366,9 +485,7 @@ human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
 To understand the data further, next step is to show the histogram of Accelerator, Gyroscope, and Gravity Reading across all subjects:
 
 ```{r}
-#----------------------------------------Histogram Accelerator Time Series---------------------------------------------
-
-#Histogram Body Acceleration Magnitude of All Subjects
+#Histogram Body Acceleration Mean of All Subjects
 human.activity%>%filter(Activity.ID<=min(minmax.activity$max.activity))%>%
   ggplot()+
   geom_histogram(binwidth=0.05,aes(x=Time.Body.Acc.mean.X),fill="red", alpha=0.6)+
@@ -377,14 +494,16 @@ human.activity%>%filter(Activity.ID<=min(minmax.activity$max.activity))%>%
   facet_grid(ActivityName~.)+
   theme_bw() +
   theme(strip.text = element_text(size = 4.5))+
-  xlab("Index")+
-  ylab("Acceleration Reading")+
+  xlab("Normalized Acceleration Value")+
+  ylab("Count")+
   labs(title="Mean of Body Acceleration Reading Plot")
+```
+
+From the result of Mean of Accelleration reading we can observe that stationary activities (laying, sitting, and standing) shows concentration in negatives value if compared to moving counterparts which shows more equally distributed reading accross all values.
 
 
-#----------------------------------------Histogram Gyroscope Time Series---------------------------------------------
-
-#Histogram Body Gyroscope Magnitude of All Subjects
+```{r}
+#Histogram Body Gyroscope Mean of All Subjects
 human.activity%>%filter(Activity.ID<=min(minmax.activity$max.activity))%>%
   ggplot()+
   geom_histogram(binwidth=0.05,aes(x=Time.Body.Gyro.mean.X),fill="red", alpha=0.6)+
@@ -393,13 +512,15 @@ human.activity%>%filter(Activity.ID<=min(minmax.activity$max.activity))%>%
   facet_grid(ActivityName~.)+
   theme_bw() +
   theme(strip.text = element_text(size = 4.5))+
-  xlab("Index")+
-  ylab("Acceleration Reading")+
+  xlab("Normalized Gyroscope Value")+
+  ylab("Count")+
   labs(title="Mean of Body Gyroscope Reading Plot")
+```
+
+From the result of Mean of Accelleration reading we can observe that stationary activities (laying, sitting, and standing) shows concentration in one specific value if compared to moving counterparts which shows more equally distributed reading accross all values.
 
 
-#----------------------------------------Histogram Gravity Reading TimeSeries---------------------------------------------
-
+```{r}
 #Histogram Body Gravity Magnitude of All Subjects
 human.activity%>%filter(Activity.ID<=min(minmax.activity$max.activity))%>%
   ggplot()+
@@ -409,7 +530,10 @@ human.activity%>%filter(Activity.ID<=min(minmax.activity$max.activity))%>%
   facet_grid(ActivityName~.)+
   theme_bw() +
   theme(strip.text = element_text(size = 4.5))+
-  xlab("Index")+
-  ylab("Acceleration Reading")+
+  xlab("Normalized Gravity Value")+
+  ylab("Count")+
   labs(title="Mean of Body Gravity Reading Plot")
 ```
+
+
+From the result of Gravity reading we can observe that stationary activities (laying, sitting, and standing) shows concentration in one specific value if compared to moving counterparts which shows more equally distributed reading accross all values.
