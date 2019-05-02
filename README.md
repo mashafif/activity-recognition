@@ -6,7 +6,7 @@ Full Report and Link to the Dataset
 
 Full report in html format can be accessed from the following link:
 
-[Full Report for Human Activity Recognition's Capstone Project](https://rawcdn.githack.com/mashafif/activity-recognition/995a5d462a5b0c7c1899b0db489ce4b00e86b320/activity-recognition.html)
+[Full Report for Human Activity Recognition's Capstone Project](https://mashafif.github.io/activity-recognition/activity-recognition.html#adding_features_to_the_sensor_reading_dataset)
 
 Dataset can be downloaded from the following link:
 
@@ -17,7 +17,7 @@ Introduction
 
 ### Background
 
-This project is the capstone project for Introduction to Data Science's Coures from Springboard
+This project is the capstone project for Introduction to Data Science's Course from Springboard
 
 ### Objectives
 
