@@ -6,43 +6,79 @@ output:
   html_document:
    toc: true
    toc_float: true
-   code_folding: show
+   code_folding: hide
 ---
 
 
+##Introduction
 
-##Background
-This project is the capstone project for Introduction to Data Science from Springboard
+###Background
+This project is the capstone project for Introduction to Data Science's Coures from Springboard
+
+###Objectives
+The main objective of this project is to explore, visualize, and finally to create machine learning model that is capable to decently classify smartphone users activity based on the smartphones sensors reading data (Accelerometer & Gyroscope).
+
+Human activitiy recognition algorithm is very crucial in mobile application development industry, especially to develop activity based apps such as excercise apps, or even augmented reality based games. 
+
+![](smartphone-HAPT.PNG)
+
+###About the Dataset
+The database used in this project was collected from the accelerometers and gyroscope from the Samsung Galaxy S Smartphone and was obtained from the UCI Machine Learning Repository below:
+
+[Human Activitiy Recognition UCI](https://d396qusza40orc.cloudfront.net/getdata%2Fprojectfiles%2FUCI%20HAR%20Dataset.zip)  
+
+From the readme of this dataset, it is mentioned that the experiments have been carried out with a group of 30 volunteers within an age bracket of 19-48 years. Each person performed six activities (WALKING, WALKING_UPSTAIRS, WALKING_DOWNSTAIRS, SITTING, STANDING, LAYING) wearing a smartphone (Samsung Galaxy S II) on the waist. Using its embedded accelerometer and gyroscope, 3-axial linear acceleration and 3-axial angular velocity at a constant rate of 50Hz were captured. The experiments have been video-recorded to label the data manually. The obtained dataset has been randomly partitioned into two sets, where 70% of the volunteers was selected for generating the training data and 30% the test data. 
+
+The sensor signals (accelerometer and gyroscope) were pre-processed by applying noise filters and then sampled in fixed-width sliding windows of 2.56 sec and 50% overlap (128 readings/window). This means that 1 row of each dataset represents 1.28 sec of measurement.
+
+The most important files from the database that will be used for this project are as the following:
+
+* "activity_labels.txt" - this file was used as reference to label activity numbers' column included in y_train.txt and y_test.txt to their corresponding activity name (STANDING, SITTING, LAYING, WALKING, WALKING DOWNSTAIRS, or WALKING UPSTAIRS)
+
+* "features_info.txt" - This file contains details of about the variables used on the feature vector mentioned in features.txt.
+
+* "features.txt" - This file lists the variable names of the 561 variables. Vectors in this files later will be used to name all columns included in x_test.txt, and x_train.txt.
+
+* "subject_test/train.txt" - This file contains the data for all participants who performed the experiments. 
+
+* "X_test/train.txt" - This file contains data for all engineered data (not the raw data) from smartphone sensors reading. It has all the feature from "features.txt" (561 variables in total) for each participant performing each activity.
+
+* "y_test/train.txt" -This dataset gave assigned number (between 1 and 6) of the activity from which each row of data in the "X-test/train.txt" was derived.
+
+* Inertial Signals" folder that contains the preprocessed data of the actual sensors reading. Inertial signals consist of the following:
+
+  + Gravitational acceleration data files for x, y and z axes: total_acc_x_train.txt, total_acc_y_train.txt, total_acc_z_train.txt.
+  
+  + Body acceleration data files for x, y and z axes: 
+body_acc_x_train.txt, body_acc_y_train.txt, body_acc_z_train.txt.
+
+  + Body gyroscope data files for x, y and z axes: 
+body_gyro_x_train.txt,  body_gyro_y_train.txt, body_gyro_z_train.txt.
 
 ##Data Wrangling
 
-###*Necessary Datasets*
-
-
-The necessary datasets consists of the following:
-
-* X_train.txt - contains sensors reading data that consists of 561 variables, and 7352 observations
-
-* Y_train.txt - contains the information regarding the activity corresponds to each observation above
-
-* subject_train.txt - contains the Subject which performs the above experiments.
-
-* feature.txt - information about all features correspond to observations of above x_train.txt dataset.
-
-
-###*Loading the dataset*
+###Loading the dataset
 
 First step is to load the dataset which is obtained from UCI Machine Learning Repository.
 
-```{r, echo=FALSE}
+```{r echo=FALSE,warning=FALSE}
 
 library(dplyr)
 library(stringr)
 library(ggplot2)
+library(randomForest)
+library(caret)
+library(e1071)
+library(tictoc)
+library(doParallel)
+library(pROC)
+library(tibble)
+library(scales)
+library(knitr)
+library(kableExtra)
 ```
 
 ```{r}
-
 #Loading the measurement data set
 x_train<-read.table("train/X_train.txt")
 x_test<-read.table("test/X_test.txt")
@@ -52,13 +88,19 @@ y_test<-data.frame(ActivityLabel=read.table("test/Y_test.txt"),train.or.test= "t
 subject_id<- data.frame(Subject=read.table("train/subject_train.txt"))
 subject_id_test<- data.frame(Subject=read.table("test/subject_test.txt"))
 
+
+kable(head(x_train),caption = "X_train Dataset") %>%
+  kable_styling(bootstrap_options = c("striped","bordered","hover", "condensed")) %>%
+  scroll_box(width = "800px", height = "200px")
+
+str(subject_id)
 ```
 
-###*Adding Features to the Sensor Reading Dataset*
+###Adding Features to the Sensor Reading Dataset
 
 Features are loaded from features.txt dataset. Features on this file is not appropiate for features naming, because most the data contains prohibited characters, also some features names are duplicated.
-Thus, the next step is to clean up the feature labels from this features.txt, using gsub() and make.names().
-Function make.names() is primarily used to efficiently solve the label duplication.
+Thus, the next step is to clean up the feature labels from this features.txt, using `gsub()` and `make.names()`.
+Function `make.names()` is primarily used to efficiently solve the column names' duplication.
 
 ```{r}
 #Loading the feature name for each column
@@ -87,9 +129,13 @@ x_test<-setNames(x_test,true_label)
 #combine x_train and x_test
 human.activity<- rbind(x_train,x_test)
 rm(x_train,x_test,true_label,label)
+
+kable(head(human.activity),caption = "X_train & X_test Combined") %>%
+  kable_styling(bootstrap_options = c("striped","bordered", "hover", "condensed")) %>%
+  scroll_box(width = "800px", height = "200px")
 ```
 
-###*Adding Actitivity Label from y dataset*
+###Adding Actitivity Label from y dataset
 
 To make it more understandable, activity label, which consists of numbering of each activity, will be converted to actual activities correspond to each numbering. 
 
@@ -110,19 +156,25 @@ y_all<-y_all %>% mutate(ActivityName=case_when(ActivityLabel==1~"WALKING",
 
 y_all$ActivityName<- as.factor(y_all$ActivityName)
 
+kable(head(y_all),caption = "Y_train and Y_test Combined") %>%
+  kable_styling(bootstrap_options = c("striped","bordered", "hover", "condensed")) %>%
+  scroll_box(width = "800px", height = "200px")
 ```                   
 
-###*Combining All Dataset Together*
+###Combining All Dataset Together
 
 Next step is to combine all of the datasets above to human.activity dataset.
 Furthermore, indices will also be added for data exploratory and visualization purpose.
 These new features basically serve as time stamp for data visualization that will be done later.
 The indices' features consist of the following:
 
-*Overall.ID - time stamp for all observations, which start from no 1 to the end of row numbers' observation.
-*Activity.ID - time stamp that is unique for each activity.
-*Subject.ID - time stamp that is unique for each subject.
-*Subject.Activity.ID - time stamp that is unique for each activity within each subject.
+* Overall.ID - time stamp for all observations, which start from no 1 to the end of row numbers' observation.
+
+* Activity.ID - time stamp that is unique for each activity.
+
+* Subject.ID - time stamp that is unique for each subject.
+
+* Subject.Activity.ID - time stamp that is unique for each activity within each subject.
 
 ```{r}
 
@@ -145,6 +197,10 @@ human.activity <- human.activity %>%
                   group_by(Subject,ActivityName)%>% 
                   mutate(Subject.Activity.ID=row_number())%>%
                   select(Overall.ID,Subject.ID,Activity.ID,Subject.Activity.ID,Train.or.Test,everything())
+
+kable(head(human.activity),caption = "Tidy Data for Data Visualization") %>%
+  kable_styling(bootstrap_options = c("striped","bordered","hover", "condensed")) %>%
+  scroll_box(width = "800px", height = "200px")
 ```
 
 ##Understanding The Data
@@ -153,6 +209,7 @@ From the Readme file of this dataset, the author has mentioned that in the engin
 
 $normalized\,x= \frac{x-max_{all\,x}}{max_{all\,x}-min_{x}}(new\,max_{all\,x}-new\,min_{all\,x})+new\,min_{all\,x}$
 
+Please note that the normalization only done within each dataset (either train dataset or test), not between different datasets. In the otherwords, value from training dataset (e.g.: mean value of 1 row of accelerator reading) is only normalized or rescaled with respect to the other mean values of training dataset, and not with respect to both training and test dataset simultaneously.
 
 To proof this, we will calculate the mean and standard deviation of each row of body_acc_x_train.txt, normalize the result using above equation, and then try to compare it with the data "Time.Mean.Acc.Mean.X" and "Time.Mean.Acc.std.X" from "x_train.txt"  
 
@@ -196,7 +253,7 @@ This is very useful during data exploratory, because we will be able to understa
 
 ##Data Exploratory and Visualization
 
-###*Distribution of Activities*
+###Distribution of Activities
 
 The distrubtion for all activities across all subjects are shown below:
 ```{r}
@@ -226,9 +283,17 @@ minmax.activity<-human.activity%>%
 minmax.subject.activity <-human.activity%>%
                          group_by(Subject, ActivityName)%>%
                          summarize(max.activity=max(Subject.Activity.ID))
+
+kable(head(minmax.activity),caption = "Activity Duration (Time Index) Across All Subjects") %>%
+  kable_styling(bootstrap_options = c("striped","bordered","hover", "condensed")) %>%
+  scroll_box(width = "800px", height = "200px")
+
+kable(head(minmax.subject.activity),caption = "Activity Duration (Time Index) per Subject") %>%
+  kable_styling(bootstrap_options = c("striped","bordered","hover", "condensed")) %>%
+  scroll_box(width = "800px", height = "200px")
 ```
 
-###*Order of Experiment*
+###Order of Experiment
 
 In what order the experiment was performed in term of subjects are shown below: 
 
@@ -255,7 +320,7 @@ ggplot(human.activity, aes(x=Subject.ID, y=ActivityLabel, col=ActivityLabel))+
   xlab("Index")+
   ylab("Activity Label")+
   theme_bw() +
-  theme(axis.text.x = element_blank(),axis.ticks.x=element_blank())
+  theme(axis.text.x = element_blank(),axis.ticks.x=element_blank())+
   labs(title="Order of Activity done by each Subject during Experiment")
 ```
 
@@ -279,44 +344,20 @@ From above visualization, we can see that each subject performed the experiment 
 
 Standing -> Sitting -> Laying -> Walking -> Walking Downstairs -> Walking Upstairs
 
-###*Time Series Visualization of All Data*
 
-Next step is to show the time series visualization of Accelerator reading across all subjects:
+###Time Series Visualization for One Subject
 
-```{r}
-#Drawing the Mean of Body Accelration accross all Subjects
-human.activity%>%filter(Activity.ID<=min(minmax.activity$max.activity))%>%
-ggplot(aes(x=Activity.ID))+
-  geom_line(aes(y=Time.Body.Acc.mean.X),color="red")+
-  geom_line(aes(y=Time.Body.Acc.mean.Y),color="blue")+
-  geom_line(aes(y=Time.Body.Acc.mean.Z),color="green")+
-  facet_grid(ActivityName~.)+
-  xlab("Index")+
-  ylab("Mean Acceleration")+
-  theme_bw() +
-  theme(strip.text = element_text(size = 4.5))+
-  labs(title="Mean of Body Acceleration Plot of All Subjects")
-  
-```
-
-From the time series data above, we can cleary observe clear pattern difference between stationary activities (standing, sitting, laying), and the moving activities(walking, etc).
-
-Yet, Visualization of time series across all subjects is not something that is easy to observe.
-Next will be to explore the sensors reading for only 1 subject = subject no 5
-
-###*Time Series Visualization for One Subject*
-
-Next step is to show the time series visualization of Accelerator reading only for Subject 5:
+Next step is to show the time series visualization of mean, standard deviation, and magnitude of Body Acceleration, Body Gyroscope, and Body Gravity Reading.
 
 First is to determine the minimum time index across all activities done by subject 5. 
 ```{r}
-
 Subjects <- minmax.subject.activity%>%
                    filter(Subject==5)
 Subjects.length<- min(Subjects$max.activity)
+paste("Minimum duration of activity done by Subject 5 is",Subjects.length,"indices or equal to ", Subjects.length*1.28, "second(s)")
 ```
 
-#### Time Series Plot of Body Acceleration
+####Time Series Plot of Body Acceleration
 
 ```{r}
 #Body Accelration Reading Mean of subject no 5
@@ -333,7 +374,7 @@ human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
   labs(title="Mean of Body Acceleration Plot of Subject 5")
 ```
 
-From the result of Mean of Accelleration reading we can observe that stationary activities (laying, sitting, and standing) shows less fluctuation if compared to moving activities (walking, walking downstairs, walking upstairs) 
+From the result of Mean of Accelleration reading we can observe that stationary activities (laying, sitting, and standing) shows less variation if compared to moving activities (walking, walking downstairs, walking upstairs) 
 
 ```{r}
 #Body Accelration Reading SD of subject no 5
@@ -374,7 +415,7 @@ We can also draw same conclusion from the Magnitude (Resultant of X,Y,Z) of Body
 
 
 
-#### Time Series Plot of Body Gyroscope reading
+####Time Series Plot of Body Gyroscope reading
 
 Next step is to show the time series visualization of Gyroscope reading only for Subject 5:
 
@@ -394,7 +435,7 @@ human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
   labs(title="Mean of Body Gyroscope Plot of Subject 5")
 ```
 
-Gyroscope which represents the radial velocity of subject shows that laying has relatively Z axis reading if compared to the other stationary activities. 
+Gyroscope which represents the radial velocity of subject shows that laying has relatively higher Z axis value if compared to the other stationary activities. 
 Meanwhile, normal walking shows that it shows barely no variation in gyroscope reading if compared to the walking upstairs/downstairs.
 
 
@@ -430,7 +471,7 @@ human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
 
 Likewise, We can draw the same conclusion from the Maginitude of Gyroscope with the Body Acceleration's counterpart.
 
-#### Time Series Plot of Gravity Result
+####Time Series Plot of Gravity Result
 
 Next step is to show the time series visualization of Gravity reading only for Subject 5:
 
@@ -449,7 +490,7 @@ human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
   labs(title="Mean of Body Gravity Plot of Subject 5")
 ```
 
-
+The most significant discoveries that we can condlude from above data is that laying has relatively lower x axis graivity reading value compared to other stationary activities. Also the Walking Upstairs y axis value is slightly lower than other moving activities
 
 ```{r}
 #Body Gravity Reading SD of subject no 5
@@ -466,6 +507,8 @@ human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
   labs(title="Standard Deviation of Body Gravity Plot of Subject 5")
 ```
 
+From above plot, it is quite difficult to draw any conclusion regarding the standard deviation for gravity value. We will try to revisit this variable during the histogram plotting.
+
 ```{r}
 #Body Gravity Magnitude of subject
 human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
@@ -479,10 +522,14 @@ human.activity%>%filter(Subject==5,Subject.Activity.ID<=Subjects.length)%>%
   labs(title="Magnitude (Resultant of X,Y,Z) of Body Gravity Plot of Subject 5")
 ```
 
+From above plot, we can observe subtle yet quite obvious difference between moving activites with the value of resultant of gravity of x-y-z axis from higher to lower being as follows: Walking Downstairs, Walking Upstairs, Walking.
 
-###*Histogram Visualization for All Activities*
 
-To understand the data further, next step is to show the histogram of Accelerator, Gyroscope, and Gravity Reading across all subjects:
+###Histogram Visualization for All Subjects
+
+To understand the data further, next step is to show the histogram of Accelerator, Gyroscope, and Gravity Reading across all subjects.
+
+####Histogram of Body Acceleration Data across all Subjects
 
 ```{r}
 #Histogram Body Acceleration Mean of All Subjects
@@ -501,6 +548,41 @@ human.activity%>%filter(Activity.ID<=min(minmax.activity$max.activity))%>%
 
 From the result of Mean of Accelleration reading we can observe that stationary activities (laying, sitting, and standing) shows concentration in negatives value if compared to moving counterparts which shows more equally distributed reading accross all values.
 
+```{r}
+#Histogram Body Acceleration Standard Deviation of All Subjects
+human.activity%>%filter(Activity.ID<=min(minmax.activity$max.activity))%>%
+  ggplot()+
+  geom_histogram(binwidth=0.05,aes(x=Time.Body.Acc.std.X),fill="red", alpha=0.6)+
+  geom_histogram(binwidth=0.05,aes(x=Time.Body.Acc.std.Y),fill="blue",alpha=0.6)+
+  geom_histogram(binwidth=0.05,aes(x=Time.Body.Acc.std.Z),fill="green",alpha=0.6)+
+  facet_grid(ActivityName~.)+
+  theme_bw() +
+  theme(strip.text = element_text(size = 4.5))+
+  xlab("Normalized Acceleration Value")+
+  ylab("Count")+
+  labs(title="Standard Deviation of Body Acceleration Reading Plot")
+```
+
+From the result of Standard Deviation of Accelleration's histogram above, it has become more apparent that the stationary activities standard deviations all concentrated in the lowest end (-1), while the moving activities lay at the middle to the high end and more distributed equally. 
+
+```{r}
+#Histogram Body Acceleration Magnitude of All Subjects
+human.activity%>%filter(Activity.ID<=min(minmax.activity$max.activity))%>%
+  ggplot()+
+  geom_histogram(binwidth=0.05,aes(x=Time.Body.Acc.Mag.mean),fill="purple", alpha=0.6)+
+  facet_grid(ActivityName~.)+
+  theme_bw() +
+  theme(strip.text = element_text(size = 4.5))+
+  xlab("Normalized Acceleration Value")+
+  ylab("Count")+
+  labs(title="Magnitued (Resultant x-y-z) of Body Acceleration Reading Plot")
+```
+
+Same conclusion can also be drawn from histogram of magnitude above with the stationary activities are more concentrated at the lower end if compared to the moving activities. Furthermore the walking downstairs' magnitude value is slightly higher than walking and walking upstairs.
+
+
+####Histogram of Body Gyroscope Data across all Subjects
+
 
 ```{r}
 #Histogram Body Gyroscope Mean of All Subjects
@@ -517,11 +599,44 @@ human.activity%>%filter(Activity.ID<=min(minmax.activity$max.activity))%>%
   labs(title="Mean of Body Gyroscope Reading Plot")
 ```
 
-From the result of Mean of Accelleration reading we can observe that stationary activities (laying, sitting, and standing) shows concentration in one specific value if compared to moving counterparts which shows more equally distributed reading accross all values.
-
+From the result of Mean of Gyroscope reading we can observe that stationary activities (laying, sitting, and standing) shows concentration in one specific value if compared to moving counterparts which shows more equally distributed reading accross all values. 
 
 ```{r}
-#Histogram Body Gravity Magnitude of All Subjects
+#Histogram Body Gyroscope Standard Deviation of All Subjects
+human.activity%>%filter(Activity.ID<=min(minmax.activity$max.activity))%>%
+  ggplot()+
+  geom_histogram(binwidth=0.05,aes(x=Time.Body.Gyro.std.X),fill="red", alpha=0.6)+
+  geom_histogram(binwidth=0.05,aes(x=Time.Body.Gyro.std.Y),fill="blue",alpha=0.6)+
+  geom_histogram(binwidth=0.05,aes(x=Time.Body.Gyro.std.Z),fill="green",alpha=0.6)+
+  facet_grid(ActivityName~.)+
+  theme_bw() +
+  theme(strip.text = element_text(size = 4.5))+
+  xlab("Normalized Gyroscope Value")+
+  ylab("Count")+
+  labs(title="Standard Deviation of Body Gyroscope Reading Plot")
+```
+
+Above histogram resulted the same conclusion if compared to the standard deviation body acceleration above.
+
+```{r}
+#Histogram Body Gyroscope Standard Deviation of All Subjects
+human.activity%>%filter(Activity.ID<=min(minmax.activity$max.activity))%>%
+  ggplot()+
+  geom_histogram(binwidth=0.05,aes(x=Time.Body.Gyro.Mag.mean),fill="red", alpha=0.6)+
+  facet_grid(ActivityName~.)+
+  theme_bw() +
+  theme(strip.text = element_text(size = 4.5))+
+  xlab("Normalized Gyroscope Value")+
+  ylab("Count")+
+  labs(title="Magnitude(Resultant x-y-z) of Body Gyroscope Reading Plot")
+```
+
+Above histogram resulted the same conclusion if compared to the standard deviation body acceleration above.
+
+####Histogram of Body Gravity Data across all Subjects
+
+```{r}
+#Histogram Body Gravity Mean of All Subjects
 human.activity%>%filter(Activity.ID<=min(minmax.activity$max.activity))%>%
   ggplot()+
   geom_histogram(binwidth=0.05,aes(x=Time.Gravity.Acc.mean.X),fill="red", alpha=0.6)+
@@ -535,5 +650,258 @@ human.activity%>%filter(Activity.ID<=min(minmax.activity$max.activity))%>%
   labs(title="Mean of Body Gravity Reading Plot")
 ```
 
+Gravity reading for laying is more distributed equally across all range, if compared to other reading. Also other activities have higher x value if compared to laying. 
 
-From the result of Gravity reading we can observe that stationary activities (laying, sitting, and standing) shows concentration in one specific value if compared to moving counterparts which shows more equally distributed reading accross all values.
+```{r}
+#Histogram Body Gravity Standard deviation of All Subjects
+human.activity%>%filter(Activity.ID<=min(minmax.activity$max.activity))%>%
+  ggplot()+
+  geom_histogram(binwidth=0.05,aes(x=Time.Gravity.Acc.std.X),fill="red", alpha=0.6)+
+  geom_histogram(binwidth=0.05,aes(x=Time.Gravity.Acc.std.Y),fill="blue",alpha=0.6)+
+  geom_histogram(binwidth=0.05,aes(x=Time.Gravity.Acc.std.Z),fill="green",alpha=0.6)+
+  facet_grid(ActivityName~.)+
+  theme_bw() +
+  theme(strip.text = element_text(size = 4.5))+
+  xlab("Normalized Gravity Value")+
+  ylab("Count")+
+  labs(title="Standard Deviation of Body Gravity Reading Plot")
+```
+
+Stationary activities show slightly lower value than moving activities. Also, walking x,y values are slightly lower if compared to walking down/upstairs activity.
+
+##Making the Prediction Model
+
+###Preparation
+Before we start creating the machine learning model, first we will split the dataset back into train, and test data set. Also we will also remove unnecesary features such as ID, Subject name etc.
+
+```{r}
+#Splitting the dataset into train and test
+human.activity.train<- human.activity %>%
+                       ungroup()%>%
+                       filter(Train.or.Test=="train")%>%
+                       select(-Overall.ID,-Subject.ID,-Activity.ID,-Subject.Activity.ID,
+                              -Train.or.Test,-Subject,-ActivityLabel)
+
+human.activity.test<- human.activity %>%
+                       ungroup()%>%
+                       filter(Train.or.Test=="test")%>%
+                       select(-Overall.ID,-Subject.ID,-Activity.ID,-Subject.Activity.ID,
+                              -Train.or.Test,-Subject,-ActivityLabel)
+
+kable(head(human.activity.train),caption="Tidy Dataset Only for Training") %>%
+  kable_styling(bootstrap_options = c("striped","bordered","hover", "condensed")) %>%
+  scroll_box(width = "800px", height = "200px")
+
+```
+
+###Prediction Model using Random Forest
+
+####Creating and Evaluating the Accuracy of the Model
+We will  create classification model using the random forest, then to confirm the accuracy using confusion matrix.
+Hyperparameters we will set the hyperparameters as follows:
+
+* Number of variables randomly sampled as candidates at each split (mtry)=24
+
+* Number of trees to grow (ntree)=500
+
+Above parameters were obtained as a result of tuning using caret package.
+
+```{r}
+
+set.seed(123)  # for reproducibility
+model1 <- randomForest(formula = ActivityName ~ ., 
+                       data = human.activity.train,
+                       ntree=500,
+                       mtry=24, importance=TRUE)
+```
+
+```{r}
+class_prediction <- predict(object = model1,   # model object 
+                            newdata = human.activity.test,  # test dataset
+                            type = "class") # return classification labels
+                            
+
+# Calculate the confusion matrix for the test set
+cm <- confusionMatrix(data = class_prediction,       # predicted classes
+                      reference = human.activity.test$ActivityName)  # actual classes
+print(cm)
+```
+
+From the above, with the model above, we can predict the activity of the smartphone user with the accuracy of `r percent(cm$overall["Accuracy"])`, and the Kappa value of `r percent(cm$overall["Kappa"])`. The accuracy states how well the model predicted accurately for each activity. The kappa shares the same information but it calculates how well a model predicted while taking into account chance or luck. Both of the values of accuracy and kappa obtained by above model are cosidered quite high.
+
+####ROC and AUC of the Model
+Next, we will plot the reciever operating characteristic (ROC), and inspect area under the curve (AUC) for each class to tell how much model is capable of distinguishing between classes. Because we are dealing with multiclass classification problems, instead of simple binary "Yes" or "NO" classification problem, we need to perform the following steps in order to plot ROC & to obtain the AUC:
+
+1. Making new dataset of the prediction for each class, but in a form of matrix of probabilities (range from 0-1), instead of classification labels. This can be achieved by using `predict(,type="prob")`
+2. Adding new variable/feature "predict", which indicates the prediction of activity label to the new dataset mentioned in no.1. Label is determined based on the activity with the highest probability.
+3. Adding new variable/feature "obs", which consists of observable or actual activity labels. This new variable is obtained from the ActivityName of human.activity.test dataset `human.activity.test$ActivityName`.
+4. To create ROC plot for each activity class separately.
+5. To combine above ROC plot into one.
+6. Finally, is to determine the AUC.
+
+```{r}
+#Prediction of probablities of each class
+class_prediction_prob <- as.data.frame(predict(object = model1,   # model object 
+                            newdata = human.activity.test,  # test dataset
+                            type = "prob"))# return probability of each class
+
+#Adding predicted label
+class_prediction_prob$predict<- names(class_prediction_prob)[1:6][apply(class_prediction_prob[,1:6], 1,which.max)]
+#Adding observed/measured label
+class_prediction_prob$obs<- human.activity.test$ActivityName
+
+#Creating ROC for each class.
+roc.plot1 <- roc(ifelse(class_prediction_prob$obs=="STANDING", 1, 0), 
+                 as.numeric(class_prediction_prob$STANDING))
+roc.plot2 <- roc(ifelse(class_prediction_prob$obs=="SITTING", 1, 0), 
+                 as.numeric(class_prediction_prob$SITTING))
+roc.plot3 <- roc(ifelse(class_prediction_prob$obs=="LAYING", 1, 0), 
+                 as.numeric(class_prediction_prob$LAYING))
+roc.plot4 <- roc(ifelse(class_prediction_prob$obs=="WALKING", 1, 0), 
+                 as.numeric(class_prediction_prob$WALKING))
+roc.plot5 <- roc(ifelse(class_prediction_prob$obs=="WALKING_UPSTAIRS", 1, 0), 
+                 as.numeric(class_prediction_prob$WALKING_UPSTAIRS))
+roc.plot6 <- roc(ifelse(class_prediction_prob$obs=="WALKING_DOWNSTAIRS", 1, 0), 
+                 as.numeric(class_prediction_prob$WALKING_DOWNSTAIRS))
+
+#Combining all ROC into one plot.
+ggroc(list(STANDING = roc.plot1, 
+           SITTING = roc.plot2,
+           LAYING = roc.plot3,
+           WALKING = roc.plot4,
+           WALKING_UPSTAIRS = roc.plot5,
+           WALKING_DOWNSTAIRS = roc.plot6))+
+           facet_wrap(.~name)+
+           theme_bw()
+
+#Calculating the AUC
+AUC<- data.frame(Activity=c("STANDING","SITTING","LAYING","WALKING",
+                            "WALKING_UPSTAIRS","WALKING_DOWNSTAIRS"),
+                 AUC=c(round((auc(roc.plot1)),3),round((auc(roc.plot2)),3),
+                       round((auc(roc.plot3)),3),
+                       round((auc(roc.plot4)),3),round((auc(roc.plot5)),3),
+                       round((auc(roc.plot6)),3)))
+kable(AUC,caption="Area Under the Curve (AUC)") %>%
+  kable_styling(bootstrap_options = c("striped","bordered","hover", "condensed")) %>%
+  scroll_box(width = "800px", height = "200px")
+```
+
+From the above, the model has resulted in a very high value of AUC (very close to 1). This means that our model is very capable in distinguishing or classifying between classes of activities.
+
+####Parameters Importance
+
+We will find which features are the most impactful among all 561 features that we have in the dataset. Importance of features are measured using Mean of Decrease in Accuracy. The more the accuracy of the random forest decreases due to the exclusion (or permutation) of a single variable, the more important that variable is deemed, and therefore variables with a large mean decrease in accuracy are more important for classification of the data.
+
+First, is to determine the top 10 the most important features/variables.
+
+```{r}
+rf.importance<-data.frame(importance(model1,type=1))
+rf.importance<-rf.importance%>%
+               rownames_to_column("Features")
+
+
+rf.importance.top5<-rf.importance%>%  top_n(n=10, wt=MeanDecreaseAccuracy)%>%
+                                      mutate(Features=factor(Features,
+                                                           levels=Features[order(MeanDecreaseAccuracy)]))%>%
+                                      ggplot(aes(x=Features,y=MeanDecreaseAccuracy,fill=Features))+
+                                      geom_bar(stat="identity")+
+                                      theme_bw()+
+                                      coord_flip()+
+                                      ylab("Mean Decrease in Accuracy(%)")+
+                                      xlab("Features")+
+                                      theme(legend.title = element_blank())+
+                                      labs(title="Top 5 Most Important Features")
+rf.importance.top5
+```
+
+Next, is to determine whether from body motion data from accelerometer, gravitational data from accelerometer, or data from Gyroscope are the most important. 
+
+```{r}
+rf.importance.sensors<-rf.importance%>%  mutate(Features1=gsub("^.*(Gravity[.]Acc|Gyro|Body[.]Acc).*",
+                                                               "\\1",Features))%>%
+                                         filter(Features1=="Gravity.Acc"|Features1=="Body.Acc"|Features1=="Gyro")%>%
+                                         group_by(Features1)%>%
+                                         summarise(total=mean(MeanDecreaseAccuracy))%>%
+                                         mutate(Features1=factor(Features1,levels=Features1[order(total)]))%>%
+                                         ggplot(aes(x=Features1,y=total,fill=Features1))+
+                                         geom_bar(stat="identity")+
+                                         theme_bw()+
+                                         coord_flip()+
+                                         ylab("Mean Decrease in Accuracy(%)")+
+                                         xlab("Features")+
+                                         theme(legend.title = element_blank())+
+                                         labs(title="Features Importance(Accelerator vs Gyroscope vs Gravity) ")
+rf.importance.sensors
+```
+
+From above we can condlude that body's gravitational components from accellerometer is the most impactful.
+
+
+Next, is to determine whether time domain variables, or the frequency domain variables are the most important.
+
+```{r}
+rf.importance.domain<-rf.importance%>%mutate(Features1=gsub("^.*(Time|Frequency).*","\\1",Features))%>%
+                                      filter(Features1=="Time"|Features1=="Frequency")%>%
+                                      group_by(Features1)%>%
+                                      summarise(total=mean(MeanDecreaseAccuracy))%>%
+                                      mutate(Features1=factor(Features1,levels=Features1[order(total)]))%>%
+                                      ggplot(aes(x=Features1,y=total,fill=Features1))+
+                                      geom_bar(stat="identity")+
+                                      theme_bw()+
+                                      coord_flip()+
+                                      ylab("Mean Decrease in Accuracy(%)")+
+                                      xlab("Features")+
+                                      theme(legend.title = element_blank())+
+                                      labs(title="Features Importance(Frequency Domain vs Time Domain) ")
+rf.importance.domain
+```
+
+From above we can condlude that time domain variables are the most impactful.
+
+Finally, we will determine which type variables (mean, standard deviation, magnitude, etc) are the most impactful.
+
+```{r}
+rf.importance.type<-rf.importance%>% mutate(Features1=gsub("^.*(mean|std|mad|
+                                            max|min|sma|energy|iqr|entropy|
+                                            arCoeff|correlation|maxInds|meanFreq|skewness|
+                                            kurtosis|bandsEnergy|Angle).*","\\1",Features))%>%
+                                     filter(Features1=="mean"|Features1=="std"|
+                                              Features1=="mad"|Features1=="max"|
+                                              Features1=="min"|Features1=="sma"|
+                                              Features1=="energy"|Features1=="iqr"|
+                                              Features1=="entropy"|Features1=="arCoeff"|
+                                              Features1=="correlation"|
+                                              Features1=="maxInds"|Features1=="meanFreq"|
+                                              Features1=="skewness"|
+                                              Features1=="kurtosis"|
+                                              Features1=="bandsEnergy"|
+                                              Features1=="Angle")%>%
+                                     group_by(Features1)%>%
+                                     summarise(total=mean(MeanDecreaseAccuracy))%>%
+                                     mutate(Features1=factor(Features1,
+                                                             levels=Features1[order(total)]))%>%
+                                     ggplot(aes(x=Features1,y=total,fill=Features1))+
+                                     geom_bar(stat="identity")+
+                                     theme_bw()+
+                                     coord_flip()+
+                                     ylab("Mean Decrease in Accuracy(%)")+
+                                     xlab("Features")+
+                                     theme(legend.title = element_blank())+
+                                     labs(title="Features Importance(Variable Types) ")
+rf.importance.type
+```
+
+Angle and correlations are the most impactful by large margins if compared to the other variables, while Interquartile range being the least impactful parameters.
+
+##Conclusion
+The results can be summarised as follow:
+
+* Our random forest model, which has been tuned with hyperparameters of mtry=24 and ntree = 500, achieved Accuracy of `r percent(cm$overall["Accuracy"])`, and the Kappa value of `r percent(cm$overall["Kappa"])` when applied to the test dataset.  Both of the values of accuracy and kappa obtained by above model are cosidered quite high.
+
+* Our model above also shows the Area Under the Curve (AUC) very close to 1, which indicates that our model is very capable in distinguishing or classifying between classes of activities.
+
+* Among all 561 variables `r paste(rf.importance.top5$data[1,1])` is the most significant variable.
+
+* Between Body Acceleration, Body Gravity, and Body Gyroscope,  body's gravitational components from accellerometer is the most impactful.
+
+* Among all engineered variables, Angle and correlations are the most impactful by large margins if compared to the other variables
