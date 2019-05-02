@@ -6,7 +6,7 @@ Full Report and Link to the Dataset
 
 Full report in html format can be accessed from the following link:
 
-[Full Report for Human Activity Recognition's Capstone Project](https://rawcdn.githack.com/mashafif/activity-recognition/650b88b4b772bc762e48b2286f84df989f435296/activity-recognition.html)
+[Full Report for Human Activity Recognition's Capstone Project](https://rawcdn.githack.com/mashafif/activity-recognition/995a5d462a5b0c7c1899b0db489ce4b00e86b320/activity-recognition.html)
 
 Dataset can be downloaded from the following link:
 
