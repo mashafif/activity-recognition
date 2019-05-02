@@ -6,7 +6,7 @@ Full Report and Link to the Dataset
 
 Full report in html format can be accessed from the following link:
 
-[Full Report for Human Activity Recognition's Capstone Project](https://mashafif.github.io/activity-recognition/activity-recognition.html#adding_features_to_the_sensor_reading_dataset)
+[Full Report for Human Activity Recognition's Capstone Project](https://mashafif.github.io/activity-recognition/activity-recognition.html)
 
 Dataset can be downloaded from the following link:
 
