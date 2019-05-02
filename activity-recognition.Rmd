@@ -13,7 +13,7 @@ output:
 ##Introduction
 
 ###Background
-This project is the capstone project for Introduction to Data Science's Coures from Springboard
+This project is the capstone project for Introduction to Data Science's Course from Springboard
 
 ###Objectives
 The main objective of this project is to explore, visualize, and finally to create machine learning model that is capable to decently classify smartphone users activity based on the smartphones sensors reading data (Accelerometer & Gyroscope).
