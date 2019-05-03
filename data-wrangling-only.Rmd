@@ -1,0 +1,192 @@
+---
+title: "Data Wrangling for Capstone Project: Human Activity Recognition using Smartphone"
+author: "Mashlahul Afif"
+output: 
+  html_document:
+   toc: true
+   toc_float: true
+   code_folding: show
+---
+
+##Data Wrangling for Visualization
+
+###Loading the dataset
+
+First step is to load the dataset which is obtained from UCI Machine Learning Repository.
+
+```{r warning=FALSE, message=FALSE}
+
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(randomForest)
+library(caret)
+library(e1071)
+library(tictoc)
+library(doParallel)
+library(pROC)
+library(tibble)
+library(scales)
+library(knitr)
+library(kableExtra)
+```
+
+```{r}
+#Loading the measurement data set
+x_train<-read.table("train/X_train.txt")
+x_test<-read.table("test/X_test.txt")
+#Loading the dataset for activity labels
+y_train<-data.frame(ActivityLabel=read.table("train/Y_train.txt"), train.or.test= "train")
+y_test<-data.frame(ActivityLabel=read.table("test/Y_test.txt"),train.or.test= "test")
+subject_id<- data.frame(Subject=read.table("train/subject_train.txt"))
+subject_id_test<- data.frame(Subject=read.table("test/subject_test.txt"))
+
+
+kable(head(x_train),caption = "X_train Dataset") %>%
+  kable_styling(bootstrap_options = c("striped","bordered","hover", "condensed")) %>%
+  scroll_box(width = "800px", height = "200px")
+
+str(subject_id)
+```
+
+###Adding Features to the Sensor Reading Dataset
+
+Features are loaded from features.txt dataset. Features on this file is not appropiate for features naming, because most the data contains prohibited characters, also some features names are duplicated.
+Thus, the next step is to clean up the feature labels from this features.txt, using `gsub()` and `make.names()`.
+Function `make.names()` is primarily used to efficiently solve the column names' duplication.
+
+```{r}
+#Loading the feature name for each column
+label<-read.table("features.txt", col.names=c("id","Name"))
+
+#correct the label dataset, so it can be used to name the measurement data set "x_train"
+true_label<-label%>%
+            mutate(Feature=make.names(Name,unique=TRUE))%>%
+            mutate(Feature=gsub("^f","Frequency.",Feature))%>%
+            mutate(Feature=gsub("^t","Time.",Feature))%>%
+            mutate(Feature = gsub("^angle", "Angle", Feature)) %>%
+            mutate(Feature = gsub("BodyBody", "Body", Feature)) %>%
+            mutate(Feature = gsub("Acc", ".Acc", Feature)) %>%
+            mutate(Feature = gsub("Gyro", ".Gyro", Feature)) %>%
+            mutate(Feature = gsub("Jerk", ".Jerk", Feature)) %>%
+            mutate(Feature = gsub("Mag", ".Mag", Feature)) %>%
+            mutate(Feature = gsub("\\.{2,}", ".", Feature)) %>%
+            mutate(Feature = gsub("\\.+$", "", Feature)) %>%
+            select(Feature)%>%
+            unlist()
+
+
+#Add name to the measurement data set
+x_train<-setNames(x_train,true_label)
+x_test<-setNames(x_test,true_label)
+#combine x_train and x_test
+human.activity<- rbind(x_train,x_test)
+rm(x_train,x_test,true_label,label)
+
+kable(head(human.activity),caption = "X_train & X_test Combined") %>%
+  kable_styling(bootstrap_options = c("striped","bordered", "hover", "condensed")) %>%
+  scroll_box(width = "800px", height = "200px")
+```
+
+###Adding Actitivity Label from y dataset
+
+To make it more understandable, activity label, which consists of numbering of each activity, will be converted to actual activities correspond to each numbering. 
+
+```{r}
+#Converting the activity label to activity name
+y_all<-rbind(y_train,y_test)
+rm(y_test,y_train)
+y_all<-setNames(y_all,c("ActivityLabel","Train.or.Test"))
+                  
+y_all<-y_all %>% mutate(ActivityName=case_when(ActivityLabel==1~"WALKING",
+                                          ActivityLabel==2~"WALKING_UPSTAIRS",
+                                          ActivityLabel==3~"WALKING_DOWNSTAIRS",
+                                          ActivityLabel==4~"SITTING",
+                                          ActivityLabel==5~"STANDING",
+                                          ActivityLabel==6~"LAYING"))
+
+
+
+y_all$ActivityName<- as.factor(y_all$ActivityName)
+
+kable(head(y_all),caption = "Y_train and Y_test Combined") %>%
+  kable_styling(bootstrap_options = c("striped","bordered", "hover", "condensed")) %>%
+  scroll_box(width = "800px", height = "200px")
+```                   
+
+###Combining All Dataset Together
+
+Next step is to combine all of the datasets above to human.activity dataset.
+Furthermore, indices will also be added for data exploratory and visualization purpose.
+These new features basically serve as time stamp for data visualization that will be done later.
+The indices' features consist of the following:
+
+* Overall.ID - time stamp for all observations, which start from no 1 to the end of row numbers' observation.
+
+* Activity.ID - time stamp that is unique for each activity.
+
+* Subject.ID - time stamp that is unique for each subject.
+
+* Subject.Activity.ID - time stamp that is unique for each activity within each subject.
+
+```{r}
+
+#combining subject markes of both train and test data
+subject_id<- rbind(subject_id,subject_id_test)
+subject_id<- setNames(subject_id,"Subject")
+
+#Combining both measurement data set to its activity label dataset
+human.activity<-cbind(subject_id,y_all,human.activity)
+human.activity<-human.activity%>%
+                mutate(Overall.ID=as.numeric(row_number()))
+
+human.activity <- human.activity %>% 
+                  group_by(ActivityName) %>% 
+                  mutate(Activity.ID=row_number()) 
+human.activity <- human.activity %>% 
+                  group_by(Subject) %>%
+                  mutate(Subject.ID=row_number())
+human.activity <- human.activity %>%
+                  group_by(Subject,ActivityName)%>% 
+                  mutate(Subject.Activity.ID=row_number())%>%
+                  select(Overall.ID,Subject.ID,Activity.ID,Subject.Activity.ID,Train.or.Test,everything())
+
+kable(head(human.activity),caption = "Tidy Data for Data Visualization") %>%
+  kable_styling(bootstrap_options = c("striped","bordered","hover", "condensed")) %>%
+  scroll_box(width = "800px", height = "200px")
+```
+
+
+```{r eval=FALSE}
+#write the tidy dataset for visualization to csv file
+write.csv(human.activity, file="human.activity.csv")
+```
+##Data Wrangling for Machine Learning Model
+
+Before we start creating the machine learning model, first we will split the dataset back into train, and test data set. Also we will also remove unnecesary features such as ID, Subject name etc.
+
+```{r}
+#Splitting the dataset into train and test
+human.activity.train<- human.activity %>%
+                       ungroup()%>%
+                       filter(Train.or.Test=="train")%>%
+                       select(-Overall.ID,-Subject.ID,-Activity.ID,-Subject.Activity.ID,
+                              -Train.or.Test,-Subject,-ActivityLabel)
+
+human.activity.test<- human.activity %>%
+                       ungroup()%>%
+                       filter(Train.or.Test=="test")%>%
+                       select(-Overall.ID,-Subject.ID,-Activity.ID,-Subject.Activity.ID,
+                              -Train.or.Test,-Subject,-ActivityLabel)
+
+kable(head(human.activity.train),caption="Tidy Dataset Only for Training") %>%
+  kable_styling(bootstrap_options = c("striped","bordered","hover", "condensed")) %>%
+  scroll_box(width = "800px", height = "200px")
+
+```
+
+```{r eval=FALSE}
+#write the tidy dataset for machine learning to csv file
+write.csv(human.activity.train, file="human.activity.train.csv")
+write.csv(human.activity.test, file="human.activity.test.csv")
+```
